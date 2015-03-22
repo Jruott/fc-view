@@ -130,6 +130,46 @@ define(
         };
 
         /**
+         * 加载部分数据，只支持在{Array.<Object>|Object}两种格式的配置中指定第一层的key
+         * 如果配置为Object(并行加载)则从配置中pick出所指定key的配置
+         * 例如loadPartial(k1, k2):
+         *  {                   {
+         *      k1,                 k1
+         *      k2,     -->         k2
+         *      k3,             }
+         *      ...
+         *  }
+         * 如果配置为Array(串行加载)则对数组中每个配置pick出所指定key的配置组成新的数组
+         * 例如loadPartial(k1, k2):
+         *  [                   [
+         *      {k1},               {k1},
+         *      {k2},   -->         {k2}
+         *      {k3},           ]
+         *      ...
+         *  ]
+         * @return {Promise} 会返回在配置中包含的所指定的数据加载项的结果{@link meta.DataLoadResult}对象，不保证顺序
+         */
+        exports.loadPartial = function () {
+            if (!this.config) {
+                throw new Error('This DataLoader is disposed');
+            }
+            var configKeys = u.flatten([].slice.call(arguments, 0));
+            var origConfig = this.getConfig();
+            var config;
+            if (u.isArray(origConfig)) {
+                // 从数组中的每一个object中抽取出configKeys中指定的字段，
+                // 组成一个新的数组并过滤掉空的object
+                config = u.chain(origConfig).map(
+                    u.partial(u.pick, u, configKeys)
+                ).reject(u.isEmpty).value();
+            }
+            else {
+                config = u.pick(origConfig, configKeys);
+            }
+            return this.loadByConfig(config).then(u.bind(this.reportLoadResult, this));
+        };
+
+        /**
          * 提供数据加载最终结果
          *
          * 这个方法会根据数据加载的结果来选择返回（正常）或抛出异常（失败），但返回值和抛出的异常内容是一样的
