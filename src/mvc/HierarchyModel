@@ -1,0 +1,297 @@
+/**
+ * @file HierarchyModel
+ * DESIGN NOTES
+ * The design decisions behind the HierarchyModel are heavily favored for
+ * model sharing and isolation.
+ *
+ * Closures construction is expensive in terms of speed as well as memory,
+ * so we use prototypical inheritance instead.
+ *
+ * Child models are created and removed often. Using an array would be slow,
+ * since actions in middle are expensive so we used linked list.
+ *
+ * @author Hu Jian(hujian02@baidu.com)
+ */
+
+define(function (require) {
+    var fc = require('fc-core');
+    var _ = require('underscore');
+
+    var overrides = {};
+    var HierarchyModel;
+
+    /**
+     * @constructor
+     * @param {Object} context initialize properties
+     */
+    overrides.constructor = function (context) {
+        this.$super(arguments);
+
+        this.parent = null;
+        this.nextSibling = null;
+        this.prevSibling = null;
+        this.childHead = null;
+        this.childTail = null;
+        this.groupDeregisterFns = [];
+    };
+
+    /**
+     * Creates a new child model.
+     *
+     * The parent model will broadcast the model property change event if
+     * its child models don't own the changed property.
+     * The model can be removed from the hierarchy using `dispose`
+     *
+     * Model.dispose must be called when it is desired for the model
+     * and its child models to be permanently detached from the parent and
+     * thus stop participating in model property change detection and listener
+     * notification by invoking.
+     *
+     * @param {Object} context preset properties in child model
+     * @return {HierarchyModel} The newly created child model
+     */
+    overrides.createChildModel = function (context) {
+        var child = new HierarchyModel();
+
+        // setup the hierarchy for child model
+        child.parent = this;
+        child.prevSibling = this.childTail;
+        if (this.childHead) {
+            this.childTail.nextSibling = child;
+            this.childTail = child;
+        }
+        else {
+            this.childHead = this.childTail = child;
+        }
+        // setup the prototype chain for model sharing and isolation
+        var Noop = function () {};
+        Noop.prototype = this.store;
+        child.store = new Noop();
+
+        if (context != null) {
+            child.fill(context);
+        }
+
+        return child;
+    },
+
+    /**
+     * Set a property in model hierarchy. A change/add event will be broadcast
+     * when property modified or added.
+     *
+     * we change/add ancestor's model property if we meet all the following
+     * conditions:
+     *     - This model is not the root model.
+     *     - This model doesn't own the changed property.
+     *     - options.updateParent === true
+     *
+     * @param {string} name Property name
+     * @param {*} value Property value
+     * @param {Object} options Configure options
+     * @param {boolean} [options.silent=false] If true, will not broadcast add/change
+     *                  event.
+     * @param {boolean} [options.updateParent=false] Prerequisite to change/add
+     *                  ancestor's model property.
+     *
+     * @override
+     */
+    overrides.set = function (name, value, options) {
+        if (!this.store) {
+            throw new Error('This model is disposed');
+        }
+        if (!name) {
+            throw new Error('Argument name is not provided');
+        }
+        if (arguments.length < 2) {
+            throw new Error('Argument value is not provided');
+        }
+        options = options || {};
+        if (this.parent && !this.has(name) && options.updateParent) {
+            this.parent.set(name, value, options);
+        }
+        else {
+            var changeType = this.store.hasOwnProperty(name) ? 'change' : 'add';
+            var oldValue = _.deepClone(this.store[name]);
+            this.store[name] = value;
+            if (!_.isEqual(oldValue, value) && !options.silent) {
+                var event = {
+                    name: name,
+                    oldValue: oldValue,
+                    newValue: value,
+                    changeType: changeType
+                };
+                this.broadcast(event);
+            }
+        }
+    };
+
+    /**
+     * Get property value from model hierarchy.
+     *
+     * @param {string} name Property name
+     *
+     * @return {*} Cloned property value
+     * @override
+     */
+    overrides.get = function (name) {
+        if (!this.store) {
+            throw new Error('This model is disposed');
+        }
+        if (!name) {
+            throw new Error('Argument name is not provided');
+        }
+        return _.deepClone(this.store[name]);
+    };
+
+    /**
+     * Registers a `listener` callback to be executed whenever the watched property
+     * value changed.
+     *
+     * @param {string} name Property name
+     * @param {Function} listener Callback to be called when the watched property changed.
+     * @return {Function} Returns a deregistration function for this listener
+     */
+    overrides.watch = function (name, listener) {
+        if (!name) {
+            throw new Error('Argument name is not provided');
+        }
+        var type = 'change:' + name;
+        var handler = function (event) {
+            return listener.call(this, event.newValue, event.oldValue, event);
+        };
+
+        this.on(type, handler);
+
+        return _.bind(function () {
+            this.un(type, handler);
+        }, this);
+    };
+
+    /**
+     * A variant of `watch` where it watches an array of property values.
+     * If any one property value in the collection changed the `listener` is executed.
+     *
+     * @param {Array<string>} names An array of property names
+     * @param {Function} listener Callback to be called when any one property value in
+     *                            the collection changed.
+     * @return {Function} Returns a deregistration function for this listener
+     */
+    overrides.watchGroup = function (names, listener) {
+        if (!names || names.length === 0) {
+            throw new Error('Argument names is not provided');
+        }
+
+        if (names.length === 1) {
+            return this.watch(names[0], listener);
+        }
+
+        var changeReactionScheduled = false;
+        var deregisterFns = [];
+        var newValues = new Array(names.length);
+        var oldValues = new Array(names.length);
+        var self = this;
+        var timeoutId;
+        _.each(names, function (name, i) {
+            newValues[i] = oldValues[i] = self.get(name);
+            var unwatchFn = this.watch(name, function (newValue, oldValue) {
+                newValues[i] = newValue;
+                oldValues[i] = oldValue;
+                if (!changeReactionScheduled) {
+                    changeReactionScheduled = true;
+                    timeoutId = setTimeout(watchGroupAction, 0);
+                }
+            });
+            deregisterFns.push(unwatchFn);
+        }, this);
+
+        function watchGroupAction() {
+            timeoutId = null;
+            changeReactionScheduled = false;
+            listener(newValues, oldValues, self);
+        }
+
+        function deregister() {
+            timeoutId && clearTimeout(timeoutId);
+            while (deregisterFns.length) {
+                deregisterFns.shift()();
+            }
+        }
+        this.groupDeregisterFns.push(deregister);
+        return function () {
+            var fns = self.groupDeregisterFns;
+            for (var i = 0, len = fns.length; i < len; i++) {
+                if (fns[i] === deregister) {
+                    fns.splice(i, 1);
+                    break;
+                }
+            }
+            deregister();
+        };
+    };
+
+    /**
+     * Dispatches model property change event downwards to all child models
+     * which don't own this property.
+     *
+     * @param {Event} event the event to be broadcast through the model hierarchy.
+     */
+    overrides.broadcast = function (event) {
+        var target = this;
+        target.fire('change', event);
+        target.fire('change:' + event.name, event);
+
+        for (var child = target.childHead; child != null; child = child.nextSibling) {
+            if (child.store.hasOwnProperty(event.name)) {
+                continue;
+            }
+            child.broadcast(event);
+        }
+    };
+
+    /**
+     * Removes the current model(and all of its children) from the parent model.
+     * Removals implies that the current model is eligible for garbage collection.
+     *
+     * Just before a model is disposed, a 'dispose' event is fired.
+     * Application code can register a 'dispose' event handler that will give it
+     * a chance to perform any necessary cleanup.
+     *
+     * @override
+     */
+    overrides.dispose = function () {
+        _.each(this.groupDeregisterFns, function (groupDeregisterFn) {
+            groupDeregisterFn();
+        });
+
+        while (this.childHead) {
+            this.childHead.dispose();
+        }
+
+        // sever all the references to parent (after this cleanup, the current model should
+        // not be retained by any of our references and should be eligible for garbage collection)
+        if (this.parent && this.parent.childHead === this) {
+            this.parent.childHead = this.nextSibling;
+        }
+        if (this.parent && this.parent.childTail === this) {
+            this.parent.childTail = this.prevSibling;
+        }
+        if (this.prevSibling) {
+            this.prevSibling.nextSibling = this.nextSibling;
+        }
+        if (this.nextSibling) {
+            this.nextSibling.prevSibling = this.prevSibling;
+        }
+        this.parent = null;
+        this.nextSibling = null;
+        this.prevSibling = null;
+        this.childHead = null;
+        this.childTail = null;
+
+        this.fire('dispose');
+        this.$super(arguments);
+    };
+
+    HierarchyModel = fc.oo.derive(require('fc-view/mvc/BaseModel'), overrides);
+
+    return HierarchyModel;
+});
