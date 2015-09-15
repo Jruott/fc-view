@@ -360,6 +360,7 @@ define(function (require) {
         var error;
         try {
             require('esui').init(container, options);
+            me.bindEvents();
         }
         catch (ex) {
             error = new Error(
@@ -376,7 +377,6 @@ define(function (require) {
                 viewContext: me.viewContext,
                 componentContext: me.componentContext
             }).then(function () {
-                me.bindEvents();
                 me.customDocument();
             });
         }
@@ -440,15 +440,17 @@ define(function (require) {
      * @protected
      */
     overrides.dispose = function () {
+        var components = this.componentContext.components;
+        if (components) {
+            _.each(components, function (item) {
+                item.dispose();
+            });
+            this.componentContext.components = null;
+        }
+        this.componentContext = null;
         if (this.viewContext) {
             this.viewContext.dispose();
             this.viewContext = null;
-        }
-        if (this.components) {
-            _.each(this.components, function (item) {
-                item.dispose();
-            });
-            this.components = null;
         }
         this.$super(arguments);
     };

@@ -39,7 +39,7 @@ define(function (require) {
 
         var path = url.getPath();
 
-        return require('er/URL').withQuery(path, query).toString();
+        return require('er/URL').withQuery(path, this.filterQuery(query)).toString();
     };
 
     overrides.loadingData = {

@@ -22,7 +22,9 @@ define(function (require) {
         // model一定有了，但是view不一定有
         if (!context.isChildAction
             && !this.view
-            && this.viewType && this.viewType.prototype) {
+            && this.viewType && this.viewType.prototype
+            && context.referrer
+            && context.url.getPath() !== context.referrer.getPath()) {
             try {
                 var tplName = this.viewType.prototype.template + '-loading';
                 var container = document.getElementById(context.container);

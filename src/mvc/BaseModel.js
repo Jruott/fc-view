@@ -128,7 +128,7 @@ define(function (require) {
         var oldValue = _.deepClone(this.store[name]);
         this.store[name] = value;
 
-        if (oldValue !== value && !options.silent) {
+        if (!_.isEqual(oldValue, value) && !options.silent) {
             var event = {
                 name: name,
                 oldValue: oldValue,
@@ -152,17 +152,49 @@ define(function (require) {
 
     /**
      * 提供一个更新的方法，主要是针对着PlainObject，行为是更新而不是替换
-     * 数组依然是替换
+     * 支持数组的更新，但更新数组时，传入值必需为以下标为key的PlainObject
      * @param {string} key 要更新的字段名称
      * @param {*} toUpdate 要更新的数据
      * @param {Object} [options] 相关选项
      * @param {boolean} [options.silent=false] 如果该值为`true`则不触发{@link BaseModel#.event:change|change事件}
+     * @fires change model发生变化的事件，会带上变化的keys
+     * @fires change:key 属性key发生改变的事件，会带上变化的keys
      */
     overrides.update = function (key, toUpdate, options) {
         var origValue = this.get(key);
+        var oldValue;
+        var newValue;
         if (_.isObject(origValue)) {
-            _.deepExtend(origValue, toUpdate);
-            this.set(key, origValue, options);
+            newValue = toUpdate;
+            oldValue = _.deepClone(_.pick(origValue, _.keys(toUpdate)));
+            var diffKeys = _.chain(newValue).keys().reject(function (key) {
+                return _.isEqual(oldValue[key], newValue[key]);
+            }).value();
+            this.set(key, _.deepExtend(origValue, toUpdate), {silent: true});
+            options = options || {};
+            if (!_.isEmpty(diffKeys) && !options.silent) {
+                var evt = {
+                    name: key,
+                    oldValue: oldValue,
+                    newValue: newValue,
+                    changedKeys: diffKeys,
+                    changeType: 'change'
+                };
+
+                /**
+                 * 属性值发生变化时触发
+                 *
+                 * @event BaseModel#.change
+                 *
+                 * @property {string} name 发生变化的属性的名称
+                 * @property {string} changeType 变化的类型，取值为`"add"`、`"change"`或`"remove"`
+                 * @property {Array.<string>} 发生改变的keys
+                 * @property {*} oldValue 变化前的值
+                 * @property {*} newValue 变化后的值
+                 */
+                this.fire('change', evt);
+                this.fire('change:' + key, evt);
+            }
         }
         else {
             this.set(key, toUpdate, options);

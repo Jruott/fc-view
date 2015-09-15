@@ -18,8 +18,8 @@ define(function (require) {
     // 默认使用EntryModel
     var EntryModel = require('../mvc/EntryModel');
 
-    require('fcui/Panel');
-    require('fcui/Dialog');
+    require('fcui/FcPanel');
+    require('fcui/FcDialog');
 
     /**
      * 判断是否支持html5
@@ -288,8 +288,8 @@ define(function (require) {
      * @return {Object} 为etpl定制的templateData
      */
     overrides.getTemplatedData = function () {
-
-        var model = this.getModel();
+        var me = this;
+        var model = me.getModel();
 
         var visit = function (propertyPath) {
             var path = propertyPath.replace(/\[(\d+)\]/g, '.$1').split('.');
@@ -303,8 +303,29 @@ define(function (require) {
             return value;
         };
 
-        return {get: visit, relatedModel: model};
+        // 可以使用自定义的replacer来进行展现替换，不改变model的东西
+        var getter = function (propertyPath) {
+            var value = visit(propertyPath);
+            if (me.templateDataReplacer
+                && me.templateDataReplacer[propertyPath]) {
+                var replacer = me.templateDataReplacer[propertyPath];
+                if (_.isFunction(replacer)) {
+                    return replacer.call(me, value, model);
+                }
+                // 否则是其它类型，就直接覆盖
+                return replacer;
+            }
+            return value;
+        };
+
+        return {get: getter, relatedModel: model};
     };
+
+    /**
+     * 模板数据替换配置
+     * @type {Object}
+     */
+    overrides.templateDataReplacer = null;
 
     /**
      * UI配置
@@ -413,6 +434,7 @@ define(function (require) {
             main: me.container,
             viewContext: viewContext,
             needFoot: true,
+            draggable: true,
             renderOptions: {
                 properties: me.getUIProperties(),
                 valueReplacer: _.bind(me.replaceValue, me)
@@ -426,7 +448,7 @@ define(function (require) {
             document.body.appendChild(me.container);
             // 创建Dialog
             me.control = fcui.create(
-                'Dialog',
+                'FcDialog',
                 _.deepExtend(defaultOpts, me.dialogOptions, {
                     main: me.container
                 })
@@ -434,17 +456,19 @@ define(function (require) {
 
             // 部分事件代理过来
             me.control.on('close', function () {
-                me.fire('hide');
+                // me.fire('hide');
+                me.finishDispose();
             });
             me.control.on('hide', function () {
                 me.fire('hide');
+                me.finishDispose();
             });
 
             // 立即展现
             me.control.show();
         }
         else {
-            me.control = fcui.create('Panel', defaultOpts);
+            me.control = fcui.create('FcPanel', defaultOpts);
             me.control.render();
         }
 
@@ -558,6 +582,8 @@ define(function (require) {
                     me.initBehavior();
                 }
 
+                me.initChildComponentBehavior();
+
                 // trigger一次resize
                 // me.control.resize && me.control.resize();
             });
@@ -653,6 +679,8 @@ define(function (require) {
     };
 
     overrides.initBehavior = function () {};
+
+    overrides.initChildComponentBehavior = function () {};
 
     /**
      * 给指定的控件绑定事件
@@ -791,7 +819,7 @@ define(function (require) {
         }
 
         return new Promise(function (resolve, reject) {
-            var Dialog = require('fcui/Dialog');
+            var Dialog = require('fcui/FcDialog');
             var dialog = Dialog.alert(options);
             dialog.on('ok', resolve);
             // 获取可以选择超时reject ?
@@ -823,6 +851,7 @@ define(function (require) {
 
     overrides.hide = function () {
         // 默认销毁
+        this.fire('hide');
         this.close();
     };
 
@@ -836,7 +865,15 @@ define(function (require) {
         }
 
         // 不直接dispose viewContext……
-        this.control.dispose();
+        if (this.control != null) {
+            // 有些时候这货还没初始化
+            this.control.dispose();
+        }
+        this.finishDispose();
+    };
+
+    overrides.finishDispose = function () {
+        // 不直接dispose viewContext，交给之前的control.dispose去做
         this.viewContext = null;
 
         if (this.componentContext) {
@@ -847,7 +884,7 @@ define(function (require) {
         if (this.model && !this.sharedModel) {
             this.model.dispose();
         }
-        else {
+        else if (this.model && this.model.removeDataLoader) {
             this.model.removeDataLoader(this.dataLoader);
         }
         this.model = null;
