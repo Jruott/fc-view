@@ -207,6 +207,11 @@ define(function (require) {
                 sessionId: e.sessionId
             });
         }
+        if (e.source) {
+            args.push({
+                source: e.source
+            });
+        }
 
         if (_.isArray(row)) {
             row = row[0];
