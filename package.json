@@ -24,8 +24,7 @@
             "emc": "~1.0.0",
             "fc-core": "0.x",
             "fcui": "0.x",
-            "fc-component-ria": "0.x",
-            "react": "~0.14.7"
+            "fc-component-ria": "0.x"
         }
     }
 }
