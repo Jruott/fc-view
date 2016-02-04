@@ -27,7 +27,7 @@ define(function (require) {
     };
 
     overrides.resolveQuery = function (data) {
-        var url = this.get('url');
+        var url = require('er/URL').parse(location.hash.replace(/^#/, ''));
         var query = url.getQuery();
 
         // 过滤掉没变的默认参数

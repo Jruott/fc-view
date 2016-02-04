@@ -160,6 +160,10 @@ define(function (require) {
             this.template = options.template;
         }
 
+        if (options.independent) {
+            this.independent = true;
+        }
+
         this.args = options.args || this.args || {};
         this.dialogOptions = _.extend(
             this.dialogOptions || {}, options.dialogOptions
@@ -460,7 +464,7 @@ define(function (require) {
                 me.finishDispose();
             });
             me.control.on('hide', function () {
-                me.fire('hide');
+                // me.fire('hide');
                 me.finishDispose();
             });
 
@@ -555,6 +559,9 @@ define(function (require) {
             state = me.repaint();
         }
         else {
+            if (me.independent) {
+                me.__analyse__();
+            }
             state = me.render();
         }
 
@@ -584,9 +591,30 @@ define(function (require) {
 
                 me.initChildComponentBehavior();
 
+                return me;
                 // trigger一次resize
                 // me.control.resize && me.control.resize();
             });
+    };
+
+    overrides.interface = {};
+
+    overrides.getInterface = function () {
+        return this.interface;
+    };
+
+    overrides.exportData = {};
+
+    overrides.getExportData = function () {
+        return this.exportData;
+    };
+
+    overrides.__analyse__ = function () {
+        require('fc-component-ria/pivot').analyse(this);
+    };
+
+    overrides.__unanalyse__ = function () {
+        require('fc-component-ria/pivot').unanalyze(this);
     };
 
     overrides.render = function () {
@@ -889,6 +917,8 @@ define(function (require) {
         }
         this.model = null;
         this.dataLoader = null;
+
+        this.__unanalyse__();
 
         this.destroyEvents();
         this.lifeStage.changeTo(LifeStage.DISPOSED);

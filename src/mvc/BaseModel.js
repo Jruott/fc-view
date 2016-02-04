@@ -21,7 +21,7 @@ define(function (require) {
      *
      * 1. 通过{@Action#.createModel}方法创建一个对象，或通过其它手段通过{@link Action#.setModel}提供{@link Model}实例
      * 2. 如果该对象有`load`函数，则执行该函数，并分为以下情况，通过`Promise`处理异步
-     * 3. 如果对象没有`load`函数，则默认对象本身就是Model
+     * 3. 如果对象没有`load`函数，则默认对setDataLoader象本身就是Model
      * 4. 当离开Action时，如果Model有`dispose`方法，则会调用以销毁对象
      *
      * 该Model类为一个通用的可配置的基类，提供了数据加载的相关方法
@@ -40,6 +40,10 @@ define(function (require) {
         var me = this;
         me.$super(arguments);
 
+        if (!me.dataLoaderSet) {
+            me.dataLoaderSet = {};
+        }
+
         // 配置dataLoaderSet
         _.each(me.dataLoaderSet, function (item) {
             item.setStore(me);
@@ -57,11 +61,7 @@ define(function (require) {
      */
     overrides.initialize = _.noop;
 
-    /**
-     * dataLoaderSet，不会被销毁，只会被解除store的锁定
-     * @type {Object}
-     */
-    overrides.dataLoaderSet = {};
+    // overrides.dataLoaderSet = {};
 
     /**
      * 加载数据，在完成数据处理后返回
@@ -322,6 +322,13 @@ define(function (require) {
      * @param {DataLoader} dataLoader 需要关联的数据加载器实例
      */
     overrides.addDataLoader = function (name, dataLoader) {
+        // 新建一个set
+        // TODO(liangjinping@baidu.com)，现在业务代码里的用法和当初设计的初衷不
+        // 太符合，dataLoaderSet不应该是放到这里创建的，应该使用getter来获取，
+        // 但因为业务中已经有较多地方直接引用这个dataLoaderSet，这里先临时fix一
+        // 下，下一个发布的版本会直接换成以getter的方式来获取dataLoaderSet，并且
+        // 把dataLoaderSet的初始化放到constructor里
+        this.dataLoaderSet = this.dataLoaderSet || {};
         if (this.dataLoaderSet[name]) {
             // 先remove掉
             this.removeDataLoader(name);
