@@ -845,6 +845,7 @@ define(function (require) {
         if (!options.viewContext) {
             options.viewContext = this.viewContext;
         }
+        options.closeButton = true;
 
         return new Promise(function (resolve, reject) {
             var Dialog = require('fcui/FcDialog');
@@ -868,9 +869,10 @@ define(function (require) {
         if (!options.viewContext) {
             options.viewContext = this.viewContext;
         }
+        options.closeButton = true;
 
         return new Promise(function (resolve, reject) {
-            var Dialog = require('esui/Dialog');
+            var Dialog = require('fcui/FcDialog');
             var dialog = Dialog.confirm(options);
             dialog.on('ok', resolve);
             dialog.on('cancel', reject);
