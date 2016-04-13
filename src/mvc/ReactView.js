@@ -83,7 +83,8 @@ define(function (require) {
      * 销毁view
      */
     override.dispose = function () {
-        React.unmountComponentAtNode(this.getContainerElement());
+        var container = this.getContainerElement();
+        container && ReactDOM.unmountComponentAtNode(container);
         this.reactContext = null;
         this.$super(arguments);
     };
